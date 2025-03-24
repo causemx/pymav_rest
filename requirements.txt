@@ -1,0 +1,8 @@
+fastapi
+pymavlink
+uvicorn
+pydantic
+typing-extensions
+starlette
+asyncio
+python-multipart
