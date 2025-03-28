@@ -1,44 +1,23 @@
-[
-  {
-    "seq": 0,
-    "frame": 0,
-    "command": 16,
-    "current": 1,
-    "autocontinue": 1,
-    "param1": 0,
-    "param2": 0,
-    "param3": 0,
-    "param4": 0,
-    "x": 47.397742,
-    "y": 8.545594,
-    "z": 100
-  },
-  {
-    "seq": 1,
-    "frame": 0,
-    "command": 16,
-    "current": 0,
-    "autocontinue": 1,
-    "param1": 0,
-    "param2": 0,
-    "param3": 0,
-    "param4": 0,
-    "x": 47.398542,
-    "y": 8.547594,
-    "z": 100
-  },
-  {
-    "seq": 2,
-    "frame": 0,
-    "command": 21,
-    "current": 0,
-    "autocontinue": 1,
-    "param1": 0,
-    "param2": 0,
-    "param3": 0,
-    "param4": 0,
-    "x": 47.397742,
-    "y": 8.545594,
-    "z": 0
-  }
-]
+{
+  "waypoints": [
+    {
+      "lat": 47.3977419,
+      "lon": 8.5455938,
+      "alt": 50.0,
+      "seq": 0
+    },
+    {
+      "lat": 47.3976419,
+      "lon": 8.5465938,
+      "alt": 50.0,
+      "seq": 1
+    },
+    {
+      "lat": 47.3975419,
+      "lon": 8.5475938,
+      "alt": 50.0,
+      "seq": 2
+    }
+  ],
+  "clear_existing": true
+}

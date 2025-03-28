@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional
 from pymavlink import mavutil
 from enum import Enum
+from loguru import logger
 
 app = FastAPI(
     title="MAVLink API Server",
@@ -432,47 +433,205 @@ async def send_command(command: CommandRequest, mavlink_conn = Depends(get_mavli
 
 @app.post("/mission/upload")
 async def upload_mission(mission: MissionRequest, mavlink_conn = Depends(get_mavlink_connection)):
+    """
+    Upload a mission to the vehicle with enhanced error handling and recovery mechanisms.
+    
+    This implementation includes:
+    - Capability checks
+    - Partial update recovery
+    - Progress tracking
+    - Multiple retry attempts
+    - Detailed error reporting
+    """
+   
     try:
+        # Check if vehicle is connected
+        if not connection_status["connected"] or not connection_status["last_heartbeat"]:
+            raise HTTPException(status_code=400, detail="Vehicle connection unstable")
+        
+        # Check vehicle capabilities
+        capabilities = await get_capabilities(mavlink_conn)
+        use_mission_int = capabilities.get("MISSION_INT", False)
+        
         # Clear existing mission if requested
         if mission.clear_existing:
-            mavlink_conn.waypoint_clear_all_send()
-            ack = mavlink_conn.recv_match(type='MISSION_ACK', blocking=True, timeout=3)
-            if not ack or ack.type != mavutil.mavlink.MAV_MISSION_ACCEPTED:
-                raise HTTPException(status_code=400, detail="Failed to clear existing mission")
+            clear_result = await clear_mission(mavlink_conn)
+            if not clear_result["success"]:
+                raise HTTPException(status_code=400, detail=f"Failed to clear mission: {clear_result['message']}")
+        
+        # Prepare mission items
+        waypoints = mission.waypoints
+        if not waypoints:
+            raise HTTPException(status_code=400, detail="No waypoints provided")
         
         # Start mission upload
-        mavlink_conn.waypoint_count_send(len(mission.waypoints))
+        mavlink_conn.waypoint_count_send(len(waypoints))
         
-        # Process mission items
-        for waypoint in mission.waypoints:
-            # Wait for request
-            req = mavlink_conn.recv_match(type='MISSION_REQUEST', blocking=True, timeout=5)
-            if not req:
-                raise HTTPException(status_code=504, detail=f"No mission request received for waypoint {waypoint.seq}")
+        start_time = time.time()
+        timeout = 5  # seconds
+        
+        current_waypoint_index = 0
+        retry_count = 0
+        max_retries = 3
+        progress_updates = []
+        
+        while current_waypoint_index < len(waypoints) and retry_count < max_retries:
+            
+            msg = mavlink_conn.recv_match(type='MISSION_REQUEST', blocking=True, timeout=timeout)
+            
+            if not msg:
+                
+                if retry_count < max_retries:
+                    
+                    mavlink_conn.mav.mission_write_partial_list_send(
+                        mavlink_conn.target_system,
+                        mavlink_conn.target_component,
+                        current_waypoint_index,  # Start index
+                        len(waypoints)  # End index
+                    )
+                    retry_count += 1
+                    continue
+                else:
+                    raise HTTPException(status_code=504, detail=f"Timeout waiting for MISSION_REQUEST for waypoint {current_waypoint_index}")
+            
+            # Reset retry counter on successful request
+            retry_count = 0
+            
+            # Check if the request is for the waypoint we expect
+            if msg.seq != current_waypoint_index:
+                # Handle sequence mismatch (like in C# implementation)
+                current_waypoint_index = msg.seq
+                # Log this mismatch
+                progress_updates.append(f"Sequence mismatch: expected {current_waypoint_index}, got {msg.seq}")
+            
+            # Get the waypoint
+            waypoint = waypoints[current_waypoint_index]
+            
+            # Record progress
+            progress_updates.append(f"Uploading waypoint {current_waypoint_index + 1}/{len(waypoints)}")
             
             # Send the requested waypoint
-            mavlink_conn.mav.mission_item_send(
-                mavlink_conn.target_system,
-                mavlink_conn.target_component,
-                waypoint.seq,
-                mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT,
-                mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
-                0, 0,  # Current, autocontinue
-                0, 0, 0, 0,  # Params (hold time, acceptance radius, pass radius, yaw)
-                waypoint.lat,
-                waypoint.lon,
-                waypoint.alt
-            )
+            if use_mission_int:
+                # Use MISSION_ITEM_INT format if supported
+                mavlink_conn.mav.mission_item_int_send(
+                    mavlink_conn.target_system,
+                    mavlink_conn.target_component,
+                    current_waypoint_index,
+                    mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT,
+                    mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
+                    0, 0,  # Current, autocontinue
+                    0, 0, 0, 0,  # Params (hold time, acceptance radius, pass radius, yaw)
+                    int(waypoint.lat * 10000000),  # Latitude as int32 (deg * 10^7)
+                    int(waypoint.lon * 10000000),  # Longitude as int32 (deg * 10^7)
+                    waypoint.alt
+                )
+            else:
+                # Use standard MISSION_ITEM format
+                mavlink_conn.mav.mission_item_send(
+                    mavlink_conn.target_system,
+                    mavlink_conn.target_component,
+                    current_waypoint_index,
+                    mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT,
+                    mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
+                    0, 0,  # Current, autocontinue
+                    0, 0, 0, 0,  # Params (hold time, acceptance radius, pass radius, yaw)
+                    waypoint.lat,
+                    waypoint.lon,
+                    waypoint.alt
+                )
+            
+            # Move to next waypoint
+            current_waypoint_index += 1
+            
+        # Verify all waypoints uploaded
+        if current_waypoint_index < len(waypoints):
+            raise HTTPException(status_code=400, detail=f"Mission upload incomplete: only {current_waypoint_index}/{len(waypoints)} waypoints uploaded")
         
-        # Wait for mission acknowledgment
+        # Wait for final acknowledgment
         ack = mavlink_conn.recv_match(type='MISSION_ACK', blocking=True, timeout=5)
-        if not ack or ack.type != mavutil.mavlink.MAV_MISSION_ACCEPTED:
+        if not ack:
+            raise HTTPException(status_code=504, detail="No mission acknowledgment received after upload")
+        
+        # Check result
+        if ack.type != mavutil.mavlink.MAV_MISSION_ACCEPTED:
             raise HTTPException(status_code=400, detail="Mission upload failed")
         
-        return {"status": "mission uploaded", "waypoints": len(mission.waypoints)}
+        # Success
+        return {
+            "status": "mission uploaded",
+            "waypoints_count": len(waypoints),
+            "progress_updates": progress_updates,
+            "elapsed_time": round(time.time() - start_time, 2)
+        }
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to upload mission: {str(e)}")
+        if isinstance(e, HTTPException):
+            raise
+        raise HTTPException(status_code=500, detail=f"Mission upload failed: {str(e)}")
+
+# Helper functions
+
+async def clear_mission(mavlink_conn):
+    """
+    Clear the current mission with timeout and retry logic
+    """
+    retry_count = 0
+    max_retries = 3
+    
+    while retry_count < max_retries:
+        try:
+            mavlink_conn.waypoint_clear_all_send()
+            ack = mavlink_conn.recv_match(type='MISSION_ACK', blocking=True, timeout=3)
+            
+            if ack and ack.type == mavutil.mavlink.MAV_MISSION_ACCEPTED:
+                return {"success": True, "message": "Mission cleared successfully"}
+            elif ack:
+                result = f"Clear mission failed with code: {ack.type}"
+                retry_count += 1
+            else:
+                result = "No acknowledgment received"
+                retry_count += 1
+                
+        except Exception as e:
+            result = str(e)
+            retry_count += 1
+    
+    return {"success": False, "message": result}
+
+async def get_capabilities(mavlink_conn):
+    """
+    Get vehicle capabilities from AUTOPILOT_VERSION message
+    """
+    capabilities = {}
+    
+    # Request capabilities
+    mavlink_conn.mav.command_long_send(
+        mavlink_conn.target_system,
+        mavlink_conn.target_component,
+        mavutil.mavlink.MAV_CMD_REQUEST_MESSAGE,
+        0,  # Confirmation
+        mavutil.mavlink.MAVLINK_MSG_ID_AUTOPILOT_VERSION,
+        0, 0, 0, 0, 0, 0
+    )
+    
+    # Wait for response
+    msg = mavlink_conn.recv_match(type='AUTOPILOT_VERSION', blocking=True, timeout=3)
+    
+    if msg:
+        # Check specific capabilities
+        cap_flags = msg.capabilities
+        capabilities["MISSION_FLOAT"] = bool(cap_flags & mavutil.mavlink.MAV_PROTOCOL_CAPABILITY_MISSION_FLOAT)
+        capabilities["MISSION_INT"] = bool(cap_flags & mavutil.mavlink.MAV_PROTOCOL_CAPABILITY_MISSION_INT)
+        capabilities["MISSION_FENCE"] = bool(cap_flags & mavutil.mavlink.MAV_PROTOCOL_CAPABILITY_MISSION_FENCE)
+        capabilities["MISSION_RALLY"] = bool(cap_flags & mavutil.mavlink.MAV_PROTOCOL_CAPABILITY_MISSION_RALLY)
+    else:
+        # Fallback to assume basic capabilities
+        capabilities["MISSION_FLOAT"] = True
+        capabilities["MISSION_INT"] = False
+        capabilities["MISSION_FENCE"] = False
+        capabilities["MISSION_RALLY"] = False
+    
+    return capabilities
 
 @app.get("/mission/current")
 async def get_current_mission(mavlink_conn = Depends(get_mavlink_connection)):
