@@ -1,3 +1,4 @@
+loguru
 fastapi
 pymavlink
 uvicorn

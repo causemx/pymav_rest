@@ -89,7 +89,7 @@ async def update_connection_status():
                 break
                 
         except Exception as e:
-            print(f"Error updating connection status: {e}")
+            logger.error(f"Error updating connection status: {e}")
             connection_status["connected"] = False
             break
             
@@ -473,7 +473,6 @@ async def upload_mission(mission: MissionRequest, mavlink_conn = Depends(get_mav
         current_waypoint_index = 0
         retry_count = 0
         max_retries = 3
-        progress_updates = []
         
         while current_waypoint_index < len(waypoints) and retry_count < max_retries:
             
@@ -502,13 +501,12 @@ async def upload_mission(mission: MissionRequest, mavlink_conn = Depends(get_mav
                 # Handle sequence mismatch (like in C# implementation)
                 current_waypoint_index = msg.seq
                 # Log this mismatch
-                progress_updates.append(f"Sequence mismatch: expected {current_waypoint_index}, got {msg.seq}")
-            
+                logger.info(f"Sequence mismatch: expected {current_waypoint_index}, got {msg.seq}")            
             # Get the waypoint
             waypoint = waypoints[current_waypoint_index]
             
             # Record progress
-            progress_updates.append(f"Uploading waypoint {current_waypoint_index + 1}/{len(waypoints)}")
+            logger.info(f"Uploading waypoint {current_waypoint_index + 1}/{len(waypoints)}")
             
             # Send the requested waypoint
             if use_mission_int:
@@ -560,7 +558,6 @@ async def upload_mission(mission: MissionRequest, mavlink_conn = Depends(get_mav
         return {
             "status": "mission uploaded",
             "waypoints_count": len(waypoints),
-            "progress_updates": progress_updates,
             "elapsed_time": round(time.time() - start_time, 2)
         }
         
