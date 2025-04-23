@@ -7,3 +7,7 @@ typing-extensions
 starlette
 asyncio
 python-multipart
+sqlalchemy
+asyncpg
+python-dotenv
+psycopg2-binary
