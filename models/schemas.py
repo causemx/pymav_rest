@@ -1,4 +1,5 @@
 from enum import Enum
+from datetime import datetime
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict
 
@@ -42,3 +43,24 @@ class ConnectionStatus(BaseModel):
     system_id: Optional[int] = None
     last_heartbeat: Optional[float] = None
     created_at: float
+
+class ItemBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+    price: float = Field(gt=0)
+    is_active: bool = True
+
+class ItemCreate(ItemBase):
+    """Schema for creating items"""
+    pass
+
+class Item(ItemBase):
+    """Schema for returning items"""
+    id: int
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        """Pydantic config"""
+        orm_mode = True
+        from_attributes = True
