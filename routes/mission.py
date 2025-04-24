@@ -8,7 +8,7 @@ from models.schemas import MissionRequest, MissionSummary
 from models.entities import Mission, Waypoint
 from utils.mavlink_helpers import get_mavlink_connection, clear_mission, get_capabilities
 from database import get_db
-from services.mission_service import get_missions
+from services.mission_service import create_mission_with_wps, get_missions
 
 router = APIRouter(prefix="/mission")
 
@@ -139,22 +139,7 @@ async def upload_mission(
         if ack.type != mavutil.mavlink.MAV_MISSION_ACCEPTED:
             raise HTTPException(status_code=400, detail="Mission upload failed")
         
-        # Save accepted mission to db
-        mission_item = Mission()
-        db.add(mission_item)
-        db.flush()
-
-        for wp in waypoints:
-            waypoint_item = Waypoint(
-                mission_id=mission_item.id,
-                lat=wp.lat,
-                lon=wp.lon,
-                alt=wp.alt,
-                seq=wp.seq
-            )
-            db.add(waypoint_item)
-        db.commit()
-        db.refresh(mission_item)
+        create_mission_with_wps(db, waypoints=waypoints)
         
         # Success
         return {
