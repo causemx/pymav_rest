@@ -1,16 +1,23 @@
 import time
 from fastapi import APIRouter, HTTPException, Depends
 from pymavlink import mavutil
-from typing import Optional
 from loguru import logger
+from sqlalchemy.orm import Session
 
-from models.schemas import MissionRequest
+from models.schemas import MissionRequest, MissionSummary
+from models.entities import Mission, Waypoint
 from utils.mavlink_helpers import get_mavlink_connection, clear_mission, get_capabilities
+from database import get_db
+from services.mission_service import get_missions
 
 router = APIRouter(prefix="/mission")
 
 @router.post("/upload")
-async def upload_mission(mission: MissionRequest, mavlink_conn = Depends(get_mavlink_connection)):
+async def upload_mission(
+    mission: MissionRequest,
+    mavlink_conn = Depends(get_mavlink_connection),
+    db: Session = Depends(get_db),    
+):
     """
     Upload a mission to the vehicle with enhanced error handling and recovery mechanisms.
     
@@ -132,6 +139,23 @@ async def upload_mission(mission: MissionRequest, mavlink_conn = Depends(get_mav
         if ack.type != mavutil.mavlink.MAV_MISSION_ACCEPTED:
             raise HTTPException(status_code=400, detail="Mission upload failed")
         
+        # Save accepted mission to db
+        mission_item = Mission()
+        db.add(mission_item)
+        db.flush()
+
+        for wp in waypoints:
+            waypoint_item = Waypoint(
+                mission_id=mission_item.id,
+                lat=wp.lat,
+                lon=wp.lon,
+                alt=wp.alt,
+                seq=wp.seq
+            )
+            db.add(waypoint_item)
+        db.commit()
+        db.refresh(mission_item)
+        
         # Success
         return {
             "status": "mission uploaded",
@@ -219,3 +243,22 @@ async def start_mission(mavlink_conn = Depends(get_mavlink_connection)):
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to start mission: {str(e)}")
+
+@router.get("/history")
+async def get_mission_history(db: Session = Depends(get_db)):
+    # Get all mission history from db
+    missions = get_missions(db)
+    # Convert to response model with waypoint count
+    result = []
+    for mission in missions:
+        waypoint_count = len(mission.waypoints)
+        result.append(
+            MissionSummary(
+                id=mission.id,
+                waypoint_count=waypoint_count,
+                created_at=mission.created_at,
+                updated_at=mission.updated_at
+            )
+        )
+    
+    return result

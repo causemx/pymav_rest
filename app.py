@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 
-from routes import connections, item, vehicle, mission
+from routes import connections, vehicle, mission
 
 # Create FastAPI application
 app = FastAPI(
@@ -34,8 +34,6 @@ app.include_router(connections.router, tags=["connections"])
 app.include_router(vehicle.router, tags=["vehicle"])
 app.include_router(mission.router, tags=["mission"])
 
-# for test
-app.include_router(item.router, tags=["item"])
 
 if __name__ == "__main__":
     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
