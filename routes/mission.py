@@ -4,8 +4,8 @@ from pymavlink import mavutil
 from loguru import logger
 from sqlalchemy.orm import Session
 
-from models.schemas import MissionRequest, MissionSummary
-from models.entities import Mission, Waypoint
+from schemas import MissionRequest, MissionSummary
+from models import Mission, Waypoint
 from utils.mavlink_helpers import get_mavlink_connection, clear_mission, get_capabilities
 from database import get_db
 from services.mission_service import create_mission_with_wps, get_missions

@@ -7,7 +7,7 @@ from typing import Optional, List
 from loguru import logger
 
 import config
-from models.schemas import ConnectionRequest, ConnectionStatus
+from schemas import ConnectionRequest, ConnectionStatus
 from utils.mavlink_helpers import get_mavlink_connection
 
 router = APIRouter(prefix="/connections")

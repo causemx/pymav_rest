@@ -1,19 +1,20 @@
+import schemas
 from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Any
-from models import entities, schemas
+import models
 
 """mission CRUD service"""
 
 def create_mission_with_wps(
         db: Session, 
         waypoints: List[schemas.WaypointRequest]
-) -> entities.Mission:
-    mission = entities.Mission
+) -> models.Mission:
+    mission = models.Mission
     db.add(mission)
     db.flush()
 
     for wp in waypoints:
-        waypoint = entities.Waypoint(
+        waypoint = models.Waypoint(
             mission_id=mission.id,
             lat=wp.lat,
             lon=wp.lon,
@@ -26,12 +27,12 @@ def create_mission_with_wps(
     db.refresh(mission)
     return mission
 
-def get_mission(db: Session, mission_id: int) -> Optional[entities.Mission]:
-    return db.query(entities.Mission).filter(entities.Mission.id == mission_id).first()
+def get_mission(db: Session, mission_id: int) -> Optional[models.Mission]:
+    return db.query(models.Mission).filter(models.Mission.id == mission_id).first()
 
-def get_missions(db: Session, skip: int = 0, limit: int = 100) -> List[entities.Mission]:
-    return db.query(entities.Mission)\
-             .order_by(entities.Mission.created_at.desc())\
+def get_missions(db: Session, skip: int = 0, limit: int = 100) -> List[models.Mission]:
+    return db.query(models.Mission)\
+             .order_by(models.Mission.created_at.desc())\
              .offset(skip)\
              .limit(limit)\
              .all()
@@ -40,7 +41,7 @@ def update_missions(
         db: Session, 
         mission_id: int, 
         waypoints: List[schemas.WaypointRequest]
-) -> Optional[entities.Mission]:
+) -> Optional[models.Mission]:
     pass
 
 def delete_mission(db: Session, mission_id: int) -> bool:

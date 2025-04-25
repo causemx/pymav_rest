@@ -4,7 +4,7 @@ from pymavlink import mavutil
 from typing import Optional
 from loguru import logger
 
-from models.schemas import CommandRequest
+from schemas import CommandRequest
 from utils.mavlink_helpers import get_mavlink_connection
 
 router = APIRouter(prefix="/vehicle")
