@@ -1,14 +1,14 @@
 import time
+from typing import List
 from fastapi import APIRouter, HTTPException, Depends
 from pymavlink import mavutil
 from loguru import logger
 from sqlalchemy.orm import Session
 
-from schemas import MissionRequest, MissionSummary
-from models import Mission, Waypoint
+from schemas import MissionRequest, MissionSummary, MissionDetail, WaypointResponse
 from utils.mavlink_helpers import get_mavlink_connection, clear_mission, get_capabilities
 from database import get_db
-from services.mission_service import create_mission_with_wps, get_missions
+from services.mission_service import create_mission_with_wps, get_missions, get_mission
 
 router = APIRouter(prefix="/mission")
 
@@ -229,14 +229,17 @@ async def start_mission(mavlink_conn = Depends(get_mavlink_connection)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to start mission: {str(e)}")
 
-@router.get("/history")
+@router.get("/history", response_model=List[MissionSummary])
 async def get_mission_history(db: Session = Depends(get_db)):
-    # Get all mission history from db
+    """Get all mission history from db with waypoint counts"""
     missions = get_missions(db)
+    
     # Convert to response model with waypoint count
     result = []
     for mission in missions:
+        # Count waypoints without including the full objects
         waypoint_count = len(mission.waypoints)
+        
         result.append(
             MissionSummary(
                 id=mission.id,
@@ -247,3 +250,35 @@ async def get_mission_history(db: Session = Depends(get_db)):
         )
     
     return result
+
+@router.get("/{mission_id}", response_model=MissionDetail)
+async def get_mission_detail(mission_id: int, db: Session = Depends(get_db)):
+    """Get detailed mission information including all waypoints"""
+    mission = get_mission(db, mission_id)
+    
+    if not mission:
+        raise HTTPException(status_code=404, detail=f"Mission with ID {mission_id} not found")
+    
+    # Convert waypoints from SQLAlchemy objects to Pydantic models
+    waypoint_responses = []
+    for wp in mission.waypoints:
+        waypoint_responses.append(
+            WaypointResponse(
+                id=wp.id,
+                mission_id=wp.mission_id,
+                lat=wp.lat,
+                lon=wp.lon,
+                alt=wp.alt,
+                seq=wp.seq,
+                created_at=wp.created_at,
+                updated_at=wp.updated_at
+            )
+        )
+    
+    # Create detailed mission response
+    return MissionDetail(
+        id=mission.id,
+        waypoints=waypoint_responses,
+        created_at=mission.created_at,
+        updated_at=mission.updated_at
+    )

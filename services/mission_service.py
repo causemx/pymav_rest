@@ -1,6 +1,6 @@
 import schemas
 from sqlalchemy.orm import Session
-from typing import List, Optional, Dict, Any
+from typing import List, Optional
 import models
 
 """mission CRUD service"""
@@ -9,7 +9,7 @@ def create_mission_with_wps(
         db: Session, 
         waypoints: List[schemas.WaypointRequest]
 ) -> models.Mission:
-    mission = models.Mission
+    mission = models.Mission()
     db.add(mission)
     db.flush()
 

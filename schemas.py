@@ -1,7 +1,7 @@
 from enum import Enum
 from datetime import datetime
 from pydantic import BaseModel, Field
-from typing import List, Optional, Dict
+from typing import List, Optional
 
 # Data models
 class ConnectionType(str, Enum):
@@ -28,6 +28,20 @@ class WaypointRequest(BaseModel):
     lon: float = Field(..., description="Longitude in degrees")
     alt: float = Field(..., description="Altitude in meters (relative to home)")
     seq: int = Field(..., description="Waypoint sequence number")
+
+class WaypointResponse(BaseModel):
+    """Use for refelect waypoint struct"""
+    id: int
+    mission_id: int
+    lat: float
+    lon: float
+    alt: float
+    seq: int
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+    
+    class Config:
+        from_attributes = True
 
 class MissionRequest(BaseModel):
     waypoints: List[WaypointRequest]
@@ -57,6 +71,15 @@ class MissionSummary(MissionBase):
     """Schema for returning brief mission data without waypoints"""
     id: int
     waypoint_count: int
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+    
+    class Config:
+        from_attributes = True
+
+class MissionDetail(MissionBase):
+    id: int
+    waypoints: List[WaypointResponse]
     created_at: datetime
     updated_at: Optional[datetime] = None
     
